@@ -1,0 +1,338 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "vmName": {
+      "type": "string"
+    },
+    "adminPassword": {
+      "type": "securestring"
+    },
+    "vmSize": {
+      "type": "string"
+    },
+    "datadiskcount": {
+      "type": "int",
+      "defaultValue": 0
+    },
+    "datadiskcaching": {
+      "type": "string",
+      "defaultValue" : "None",
+      "allowedValues": [
+        "None",
+        "ReadWrite",
+        "ReadOnly"
+      ]
+    },
+    "datadisksize": {
+      "type": "int",
+      "defaultValue": 31
+    },
+    "vmOS": {
+      "type": "string"
+    },
+    "vmOSversion":{
+      "type": "string",
+      "defaultValue": "latest"
+    },
+    "vmPublisher":{
+      "type": "string",
+      "defaultValue": "MicrosoftWindowsServer"
+    },
+    "vmOffer":{
+      "type": "string",
+      "defaultValue": "WindowsServer"
+    },
+   	"subnetRef": {
+  	  "type": "string"
+  	},
+    "acceleratedNetworking": {
+	    "type": "bool"
+	  },
+    "needspublicip": {
+	    "type": "bool",
+      "defaultValue": false
+	  },
+    "storageType": {
+      "type": "string"
+    },
+    "licensetype": {
+      "type": "string"
+    },
+    "adminUsername": {
+      "type": "string",
+      "defaultValue": "AzureAdmin"
+    },
+    "timeZone": {
+      "type": "string",
+      "defaultValue": "Eastern Standard Time"
+    },
+    "DomainJoin": {
+      "type": "string",
+      "defaultValue": "No"
+    },
+    "DomainToJoin": {
+      "type": "string",
+      "defaultValue": "No"
+    },
+    "DomainJoinUserName": {
+      "type": "string",
+      "defaultValue": "None"
+    },
+    "DomainJoinPassword": {
+      "type": "securestring",
+      "defaultValue": "None"
+    },
+    "DHCPType": {
+      "type": "string",
+      "defaultValue": "Dynamic",
+      "allowedValues": [
+        "Dynamic",
+        "Static"
+      ]
+    },
+    "StaticIPAddress": {
+      "type": "string",
+      "defaultValue": "10.0.0.1"
+    },
+    "CustomDNS": {
+      "type": "array",
+      "defaultValue": [
+        "AzureProvided"
+      ],
+      "metadata":{
+        "description": "If using custom, must be in the format [\"ipaddress1\", \"ipaddress2\"]"
+      }
+    },
+    "CustomBranch": {
+      "type": "string",
+      "defaultValue": "main",
+      "metadata": {
+        "description": "Advanced option. Do not change unless intentional."
+      }
+    }
+  },
+  "variables": {
+    "osDiskName": "[concat(parameters('vmName'),'_OSDisk')]",
+    "nicName": "[concat(parameters('vmName'), '-nic')]",
+    "githubURL": "https://raw.githubusercontent.com/SteveHardee/CrashCourse/",
+    "artifactsuri": "[concat(variables('githubURL'), parameters('CustomBranch'), '/artifacts/')]",
+    "nictemplateURI": "[concat(variables('githubURL'), parameters('CustomBranch'), '/scripts/nicdeploy.json')]",
+    "nicpiptemplateURI": "[concat(variables('githubURL'), parameters('CustomBranch'), '/scripts/nicpipdeploy.json')]",
+    "pipURI": "[concat(variables('githubURL'), parameters('CustomBranch'), '/scripts/PIP.json')]"
+  },
+  "resources": [
+    {
+      "condition": "[equals(parameters('needspublicip'), bool('false'))]",
+      "apiVersion": "2022-09-01",
+      "name": "[concat('linked-nic-', parameters('vmName'))]",
+      "type": "Microsoft.Resources/deployments",
+      "properties": {
+          "mode": "Incremental",
+          "templateLink": {
+              "uri": "[variables('nictemplateURI')]",
+              "contentVersion": "1.0.0.0"
+          },
+          "parameters": {
+              "nicName": {
+                "value": "[variables('nicName')]"
+              },
+              "subnetRef": {
+                "value": "[parameters('subnetRef')]"
+              },
+              "acceleratedNetworking": {
+                "value": "[parameters('acceleratedNetworking')]"
+              },
+              "DHCPType": {
+                "value": "[parameters('DHCPType')]"
+              },
+              "StaticIPAddress": {
+                "value": "[parameters('StaticIPAddress')]"
+              },
+              "CustomDNS": {
+                "value": "[parameters('CustomDNS')]"
+              }
+          }
+      },
+      "dependsOn": []
+    },
+    {
+      "condition": "[equals(parameters('needspublicip'), bool('true'))]",
+      "apiVersion": "2022-09-01",
+      "name": "[concat('linked-nic-pip-', parameters('vmName'))]",
+      "type": "Microsoft.Resources/deployments",
+      "properties": {
+          "mode": "Incremental",
+          "templateLink": {
+              "uri": "[variables('nicpiptemplateURI')]",
+              "contentVersion": "1.0.0.0"
+          },
+          "parameters": {
+              "nicName": {
+                "value": "[variables('nicName')]"
+              },
+              "subnetRef": {
+                "value": "[parameters('subnetRef')]"
+              },
+              "acceleratedNetworking": {
+                "value": "[parameters('acceleratedNetworking')]"
+              },
+              "DHCPType": {
+                "value": "[parameters('DHCPType')]"
+              },
+              "StaticIPAddress": {
+                "value": "[parameters('StaticIPAddress')]"
+              },
+              "publicIPAddressID": {
+                "value": "[resourceId('Microsoft.Network/publicIPAddresses',concat(parameters('vmName'), '-PIP'))]"
+              },
+              "CustomDNS": {
+                "value": "[parameters('CustomDNS')]"
+              }
+          }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Resources/deployments', concat('linked-pip-', parameters('vmName')))]"
+      ]
+    },
+    {
+      "condition": "[equals(parameters('needspublicip'), bool('true'))]",
+      "apiVersion": "2022-09-01",
+      "name": "[concat('linked-pip-', parameters('vmName'))]",
+      "type": "Microsoft.Resources/deployments",
+      "properties": {
+          "mode": "Incremental",
+          "templateLink": {
+              "uri": "[variables('pipURI')]",
+              "contentVersion": "1.0.0.0"
+          },
+          "parameters": {
+            "PIP-Name": {
+              "value": "[concat(parameters('vmName'), '-PIP')]"
+            }
+          }
+      },
+      "dependsOn": []
+    },
+    {
+      "name": "[parameters('vmName')]",
+      "type": "Microsoft.Compute/virtualMachines",
+      "apiVersion": "2022-11-01",
+      "location": "[resourceGroup().location]",
+      "tags": {},
+      "dependsOn": [
+        "[resourceId('Microsoft.Resources/deployments', concat('linked-nic-', parameters('vmName')))]",
+        "[resourceId('Microsoft.Resources/deployments', concat('linked-nic-pip-', parameters('vmName')))]"
+      ],
+      "properties": {
+        "licenseType": "[parameters('licensetype')]",
+        "osProfile": {
+          "computerName": "[parameters('vmName')]",
+          "adminUsername": "[parameters('adminUsername')]",
+          "adminPassword": "[parameters('adminPassword')]",
+          "windowsConfiguration": {
+            "provisionVmAgent": true,
+            "timeZone": "[parameters('timeZone')]",
+            "enableAutomaticUpdates": true
+          }
+        },
+        "hardwareProfile": {
+          "vmSize": "[parameters('vmSize')]"
+        },
+        "storageProfile": {
+          "imageReference": {
+            "publisher": "[parameters('vmPublisher')]",
+            "offer": "[parameters('vmOffer')]",
+            "sku": "[parameters('vmOS')]",
+            "version": "[parameters('vmOSversion')]"
+          },
+          "osDisk": {
+            "name": "[variables('osDiskName')]",
+            "caching": "ReadWrite",
+            "createOption": "FromImage",
+            "managedDisk": {
+              "storageAccountType": "[parameters('storageType')]"
+            }
+          },
+          "copy": [
+            {
+              "name": "dataDisks",
+              "count": "[parameters('datadiskcount')]",
+              "input": {
+                "caching": "[parameters('datadiskcaching')]",
+                "diskSizeGB": "[parameters('datadisksize')]",
+                "lun": "[copyIndex('dataDisks')]",
+                "name": "[concat(parameters('vmName'), '_datadisk', copyIndex('dataDisks'))]",
+                "createOption": "Empty",
+                "managedDisk": {
+                  "storageAccountType": "[parameters('storageType')]"
+                }
+              }
+            }
+          ]
+        },
+        "diagnosticsProfile": {
+          "bootDiagnostics": {
+            "enabled": true
+          }
+        },
+        "networkProfile": {
+          "networkInterfaces": [
+            {
+              "id": "[resourceId('Microsoft.Network/networkInterfaces', variables('nicName'))]"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "condition": "[equals(parameters('DomainJoin'), 'Yes')]",
+      "apiVersion": "2022-11-01",
+      "type": "Microsoft.Compute/virtualMachines/extensions",
+      "name": "[concat(parameters('vmName'),'/joindomain')]",
+      "location": "[resourceGroup().location]",      
+      "dependsOn": [
+        "[concat('Microsoft.Compute/virtualMachines/', parameters('vmName'))]"
+      ],
+      "properties": {
+        "publisher": "Microsoft.Compute",
+        "type": "JsonADDomainExtension",
+        "typeHandlerVersion": "1.3",
+        "autoUpgradeMinorVersion": true,
+        "settings": {
+          "Name": "[parameters('domainToJoin')]",
+          "User": "[parameters('DomainJoinUserName')]",
+          "Restart": "true",
+          "Options": 3
+        },
+        "protectedSettings": {
+          "Password": "[parameters('DomainJoinPassword')]"
+        }
+      }
+    },
+    {
+      "condition": "[equals(parameters('needspublicip'), bool('true'))]",
+      "name": "[concat(parameters('vmName'), '/DownloadLabFiles')]",
+      "type":"Microsoft.Compute/virtualMachines/extensions",
+      "location": "[resourceGroup().location]",
+      "apiVersion": "2022-11-01",
+      "dependsOn":  [
+        "[resourceId('Microsoft.Compute/virtualMachines/extensions', parameters('vmName'), 'joindomain')]"
+      ],
+      "properties": {
+        "publisher": "Microsoft.Compute",
+        "type": "CustomScriptExtension",
+        "typeHandlerVersion": "1.9",
+        "autoUpgradeMinorVersion": true,
+        "settings": {
+            "commandToExecute": "powershell -ExecutionPolicy Unrestricted -File DownloadLabs.ps1",
+            "fileUris": [
+                "[uri(variables('artifactsuri'), 'DownloadLabs.ps1')]"
+            ]
+        },
+        "protectedSettings": {}
+      }
+    }
+  ],
+  "outputs": {}
+}
